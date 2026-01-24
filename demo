@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Momcozy Air2 AI Cockpit Demo</title>
+    
+    <!-- 引入 React 和 ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- 引入 Babel 用于解析 JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        body { margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        /* 隐藏滚动条 */
+        ::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+<div id="root"></div>
+
+<script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // --- 图标组件 (替代 lucide-react) ---
+    const IconWrapper = ({ children, size = 24, className = "" }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            {children}
+        </svg>
+    );
+
+    const ChevronLeft = (props) => <IconWrapper {...props}><path d="m15 18-6-6 6-6"/></IconWrapper>;
+    const Settings = (props) => <IconWrapper {...props}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></IconWrapper>;
+    const Battery = (props) => <IconWrapper {...props}><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/></IconWrapper>;
+    const Zap = (props) => <IconWrapper {...props}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></IconWrapper>;
+    const Wind = (props) => <IconWrapper {...props}><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></IconWrapper>;
+    const Waves = (props) => <IconWrapper {...props}><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></IconWrapper>;
+    const Thermometer = (props) => <IconWrapper {...props}><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></IconWrapper>;
+    const Play = (props) => <IconWrapper {...props}><polygon points="5 3 19 12 5 21 5 3"/></IconWrapper>;
+    const Pause = (props) => <IconWrapper {...props}><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></IconWrapper>;
+    const CheckCircle = (props) => <IconWrapper {...props}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></IconWrapper>;
+    const Save = (props) => <IconWrapper {...props}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></IconWrapper>;
+    const RotateCcw = (props) => <IconWrapper {...props}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></IconWrapper>;
+
+    // --- 配置与逻辑 ---
+    const PHASES = {
+      idle: { id: 'idle', color: 'text-gray-400', label: '待机', subLabel: '', vacuumLevel: 1, cycleLevel: 0, tempValue: 37 },
+      inducing: { id: 'inducing', color: 'text-blue-500', label: '智能诱导中', subLabel: '舒缓加热按摩乳房，诱导奶阵···', vacuumLevel: 3, cycleLevel: 80, tempValue: 38 },
+      peak: { id: 'peak', color: 'text-purple-500', label: '波峰追随中', subLabel: '奶阵爆发，全力排空', vacuumLevel: 9, cycleLevel: 45, tempValue: 40 },
+      fading: { id: 'fading', color: 'text-green-500', label: '无感渐息中', subLabel: '乳房逐步排空，正在温柔收尾', vacuumLevel: 2, cycleLevel: 30, tempValue: 37 },
+    };
+
+    // --- 组件: 波形图 ---
+    const CumulativeWaveform = ({ phase, historyData }) => {
+      const canvasRef = useRef(null);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const parent = canvas.parentElement;
+        if (parent) {
+          canvas.width = parent.clientWidth;
+          canvas.height = parent.clientHeight;
+        }
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        const paddingBottom = 30;
+        const centerY = height - paddingBottom; 
+        const paddingTop = 40;
+        const availableHeight = height - paddingBottom - paddingTop;
+
+        ctx.clearRect(0, 0, width, height);
+
+        if (historyData.length > 0) {
+          const baseSpacing = 4;
+          const totalRequiredWidth = historyData.length * baseSpacing;
+          
+          let scaleX = baseSpacing;
+          if (totalRequiredWidth > width) {
+              scaleX = width / historyData.length;
+          }
+
+          const drawLine = (key, color) => {
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round'; 
+
+            historyData.forEach((val, index) => {
+              const x = index * scaleX; 
+              const scaleY = availableHeight / 85; 
+              const y = centerY - (val[key] * scaleY); 
+
+              if (index === 0) ctx.moveTo(x, y);
+              else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+          };
+
+          drawLine('r', '#a855f7'); 
+          drawLine('l', '#3b82f6'); 
+        }
+      }, [historyData]); 
+
+      return <canvas ref={canvasRef} className="w-full h-full" />;
+    };
+
+    // --- 组件: 小奶瓶 ---
+    const MilkBottleSmall = ({ volume, side, isFlashing }) => {
+      const maxVol = 150;
+      const fillHeight = Math.min((volume / maxVol) * 100, 100);
+
+      return (
+        <div className="flex flex-col items-center gap-2">
+           <div className={`relative w-12 h-20 bg-white border-2 rounded-xl rounded-t-none overflow-hidden shadow-inner transition-all duration-200 ${isFlashing ? 'border-orange-400 ring-4 ring-orange-100 scale-105' : 'border-slate-200'}`}>
+              <div className="absolute top-1 left-0 w-full text-center z-20">
+                 <span className={`text-[9px] font-black opacity-40 ${side === 'L' ? 'text-blue-500' : 'text-purple-500'}`}>
+                   {side}
+                 </span>
+              </div>
+              <div className="absolute bottom-0 left-0 w-full bg-orange-50 transition-all duration-700 ease-out border-t border-orange-100" style={{ height: `${fillHeight}%` }}>
+                 <div className="absolute top-0 left-0 w-full h-1 bg-orange-100/50 animate-pulse" />
+              </div>
+              <div className="absolute right-0 top-1/4 w-1.5 h-px bg-slate-300" />
+              <div className="absolute right-0 top-2/4 w-2 h-px bg-slate-300" />
+              <div className="absolute right-0 top-3/4 w-1.5 h-px bg-slate-300" />
+           </div>
+           <div className={`flex items-baseline gap-0.5 transition-transform ${isFlashing ? 'scale-110' : ''}`}>
+             <span className={`font-mono text-lg font-bold ${isFlashing ? 'text-orange-500' : 'text-slate-700'}`}>
+               {volume.toFixed(0)}
+             </span>
+             <span className="text-[9px] text-gray-400 font-medium">ml</span>
+           </div>
+        </div>
+      )
+    }
+
+    // --- 组件: 完成弹窗大奶瓶 ---
+    const MilkBottleBigPopup = ({ total, volL, volR }) => {
+      const fillHeight = 90; 
+
+      return (
+        <div className="flex items-center justify-center gap-8 my-4">
+            <div className="text-right flex flex-col items-end">
+                <div className="text-xs text-blue-500 font-bold mb-1 uppercase">左</div>
+                <div className="flex items-baseline gap-1">
+                    <span className="text-xl font-mono font-bold text-slate-700">{volL.toFixed(0)}</span>
+                    <span className="text-[10px] text-gray-400">ml</span>
+                </div>
+            </div>
+
+            <div className="relative w-28 h-44 bg-white border-[3px] border-slate-200 rounded-[2rem] rounded-t-xl overflow-hidden shadow-xl">
+                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-2 bg-slate-100 rounded-b-lg z-20"></div>
+                 <div className="absolute right-0 top-[20%] w-3 h-0.5 bg-slate-200"></div>
+                 <div className="absolute right-0 top-[40%] w-4 h-0.5 bg-slate-200"></div>
+                 <div className="absolute right-0 top-[60%] w-3 h-0.5 bg-slate-200"></div>
+                 <div className="absolute right-0 top-[80%] w-4 h-0.5 bg-slate-200"></div>
+
+                 <div className="absolute bottom-0 left-0 w-full bg-orange-100/80 border-t-2 border-orange-200 transition-all duration-1000 ease-out" style={{ height: `${fillHeight}%` }}>
+                    <div className="w-full h-full bg-gradient-to-t from-orange-200/50 to-transparent"></div>
+                 </div>
+
+                 <div className="absolute inset-0 flex flex-col items-center justify-center z-30 pt-4">
+                     <div className="flex items-baseline">
+                        <span className="text-4xl font-mono font-bold text-slate-800 drop-shadow-sm">{total.toFixed(0)}</span>
+                        <span className="text-sm font-bold text-slate-400 ml-1">ml</span>
+                     </div>
+                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">总奶量</span>
+                 </div>
+            </div>
+
+            <div className="text-left flex flex-col items-start">
+                <div className="text-xs text-purple-500 font-bold mb-1 uppercase">右</div>
+                <div className="flex items-baseline gap-1">
+                    <span className="text-xl font-mono font-bold text-slate-700">{volR.toFixed(0)}</span>
+                    <span className="text-[10px] text-gray-400">ml</span>
+                </div>
+            </div>
+        </div>
+      );
+    }
+
+    // --- 组件: 控制条 ---
+    const ControlBar = ({ icon: Icon, label, displayValue, unit, isManual, onToggle, value, min, max, onChange }) => {
+      const barRef = useRef(null);
+
+      const handleInteraction = (e) => {
+        if (!isManual || !barRef.current) return;
+        const rect = barRef.current.getBoundingClientRect();
+        let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+        const percentage = x / rect.width;
+        const rawValue = min + percentage * (max - min);
+        onChange(Math.round(rawValue));
+      };
+
+      const fillPercentage = ((value - min) / (max - min)) * 100;
+
+      return (
+        <div className="space-y-1.5">
+          <div className="flex justify-between items-center">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-gray-500">
+              <Icon size={12} className="text-gray-400"/> {label}
+            </span>
+            <button onClick={onToggle} className={`px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wide transition-all border ${isManual ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'}`}>
+              {isManual ? 'MANUAL' : 'AI AUTO'}
+            </button>
+          </div>
+          <div ref={barRef} className={`h-8 rounded-lg flex items-center px-3 relative border overflow-hidden transition-colors ${isManual ? 'cursor-pointer border-gray-300 bg-gray-100' : 'cursor-not-allowed border-gray-100 bg-gray-50'}`} onClick={handleInteraction}>
+             <div className={`absolute left-0 top-0 h-full opacity-10 transition-all duration-300 ${isManual ? 'bg-slate-800' : 'bg-orange-500'}`} style={{ width: `${Math.max(5, fillPercentage)}%` }} />
+             <span className={`relative z-10 font-mono text-sm font-bold transition-colors select-none ${isManual ? 'text-slate-800' : 'text-orange-600'}`}>
+                {displayValue} <span className="text-[10px] font-normal opacity-60">{unit}</span>
+             </span>
+          </div>
+        </div>
+      );
+    };
+
+    // --- 主应用 ---
+    function App() {
+      const [isActive, setIsActive] = useState(false);
+      const [isFinished, setIsFinished] = useState(false); 
+      const [phase, setPhase] = useState('idle');
+      const [duration, setDuration] = useState(0);
+      
+      const [peakCount, setPeakCount] = useState(0);
+      const [phaseTimer, setPhaseTimer] = useState(0); 
+      const [finishCountdown, setFinishCountdown] = useState(null);
+
+      const [manualVacuumVal, setManualVacuumVal] = useState(3); 
+      const [manualCycleVal, setManualCycleVal] = useState(50); 
+      const [manualTempVal, setManualTempVal] = useState(40); 
+
+      const [volL, setVolL] = useState(0);
+      const [volR, setVolR] = useState(0);
+      const [waveHistory, setWaveHistory] = useState([]);
+      
+      const [maxFlow, setMaxFlow] = useState(0);
+      const [efficientSeconds, setEfficientSeconds] = useState(0);
+
+      const [flashL, setFlashL] = useState(false);
+      const [flashR, setFlashR] = useState(false);
+
+      const [manualVacuum, setManualVacuum] = useState(false);
+      const [manualCycle, setManualCycle] = useState(false);
+      const [manualTemp, setManualTemp] = useState(false);
+
+      const [showNotification, setShowNotification] = useState(false);
+
+      useEffect(() => {
+        let timer;
+        if (isActive) {
+          timer = setInterval(() => {
+            setDuration(d => d + 1);
+            setPhaseTimer(t => t + 1);
+
+            // 流程控制逻辑
+            if (phase === 'inducing' && peakCount === 0 && phaseTimer > 4) {
+               setPhase('peak'); setPeakCount(1); setPhaseTimer(0);
+               setShowNotification(true); setTimeout(() => setShowNotification(false), 4000);
+            } else if (phase === 'peak' && phaseTimer > 9) {
+               if (peakCount >= 3) { setPhase('fading'); setPhaseTimer(0); } else { setPhase('inducing'); setPhaseTimer(0); }
+            } else if (phase === 'inducing' && peakCount > 0 && phaseTimer > 9) {
+               setPhase('peak'); setPeakCount(pc => pc + 1); setPhaseTimer(0);
+               setShowNotification(true); setTimeout(() => setShowNotification(false), 4000);
+            } else if (phase === 'fading' && phaseTimer > 4) {
+               if (finishCountdown === null) setFinishCountdown(3);
+            }
+
+            if (finishCountdown !== null) {
+              if (finishCountdown > 0) setFinishCountdown(c => c - 1);
+              else { setIsActive(false); setIsFinished(true); setFinishCountdown(null); }
+            }
+
+            // 数据模拟
+            let flowL = 0, flowR = 0;
+            if (phase === 'peak') { flowL = 1.2 + Math.random(); flowR = 1.0 + Math.random(); setEfficientSeconds(s => s + 1); } 
+            else if (phase === 'inducing') { flowL = 0.2; flowR = 0.15; } 
+            else if (phase === 'fading') { flowL = 0.1; flowR = 0.05; }
+
+            const currentTotalFlow = flowL + flowR; 
+            if (currentTotalFlow > maxFlow) setMaxFlow(currentTotalFlow);
+
+            setVolL(prev => {
+               const next = prev + flowL;
+               if (Math.floor(next) > Math.floor(prev) && Math.floor(next) % 10 === 0) { setFlashL(true); setTimeout(() => setFlashL(false), 800); }
+               return next;
+            });
+            setVolR(prev => {
+               const next = prev + flowR;
+               if (Math.floor(next) > Math.floor(prev) && Math.floor(next) % 10 === 0) { setFlashR(true); setTimeout(() => setFlashR(false), 800); }
+               return next;
+            });
+
+            // 波形生成
+            let ampL = 0, ampR = 0;
+            if (phase === 'peak') {
+               let baseIntensity = 40;
+               if (peakCount === 1) baseIntensity = 45; else if (peakCount === 2) baseIntensity = 65; else if (peakCount === 3) baseIntensity = 35;
+               ampL = baseIntensity + Math.random() * 10; ampR = (baseIntensity * 0.9) + Math.random() * 10;
+            } else if (phase === 'inducing') {
+               const growth = Math.min(phaseTimer * 1.5, 20); 
+               ampL = (8 + growth) + Math.random() * 2; ampR = (6 + growth) + Math.random() * 2;
+            } else { ampL = 4; ampR = 3; }
+            setWaveHistory(prev => [...prev, { l: ampL, r: ampR }]);
+
+          }, 1000);
+        }
+        return () => clearInterval(timer);
+      }, [isActive, phase, phaseTimer, peakCount, finishCountdown, maxFlow]);
+
+      const formatTime = (seconds) => {
+        const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const s = (seconds % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+      };
+
+      const resetAll = () => {
+        setIsActive(false); setIsFinished(false); setPhase('idle'); setDuration(0);
+        setVolL(0); setVolR(0); setPeakCount(0); setPhaseTimer(0); setWaveHistory([]);
+        setEfficientSeconds(0); setMaxFlow(0); setFinishCountdown(null);
+      };
+
+      const handleStart = () => { resetAll(); setIsActive(true); setPhase('inducing'); };
+      const handleFinish = () => { setIsActive(false); setIsFinished(true); };
+      const currentConfig = PHASES[phase] || PHASES.idle;
+
+      return (
+        <div className="w-full max-w-[380px] aspect-[9/20] bg-white rounded-[2.5rem] shadow-2xl overflow-hidden relative border border-gray-200 flex flex-col">
+          
+          {/* Header */}
+          <div className="px-4 pt-6 pb-2 flex justify-between items-start bg-white z-20 shrink-0 border-b border-gray-50">
+            <button onClick={() => phase !== 'idle' ? handleFinish() : resetAll()} className="p-2 -ml-1 text-slate-600 hover:bg-gray-50 active:bg-gray-100 rounded-full transition-all">
+              <ChevronLeft size={26} />
+            </button>
+            <div className="flex flex-col items-center">
+              <div className="text-base font-bold text-slate-900 tracking-tight">Momcozy Air2</div>
+              {!isFinished && (
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                  <span className="text-[10px] text-gray-400 font-medium">Connected</span>
+                  <div className="w-px h-3 bg-gray-300 mx-1"></div>
+                  <div className="flex items-center">
+                     <div className="relative w-[16px] h-[8px] border border-green-600 rounded-[2px] p-[1px]">
+                        <div className="h-full bg-green-600 rounded-[0.5px]" style={{ width: '80%' }} />
+                        <div className="absolute -right-[3px] top-1/2 -translate-y-1/2 w-[1.5px] h-[3px] bg-green-600 rounded-r-[1px]" />
+                     </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-400">80%</span>
+                </div>
+              )}
+            </div>
+            <button className="p-2 -mr-1 text-slate-600 hover:bg-gray-50 rounded-full">
+              <Settings size={22} />
+            </button>
+          </div>
+
+          {/* READY STATE */}
+          {phase === 'idle' && !isFinished && (
+            <div className="flex-1 flex flex-col relative overflow-hidden z-10">
+               <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-orange-100/50 to-transparent pointer-events-none" />
+               <div className="flex-1 flex flex-col justify-center items-center px-6 w-full -mt-10">
+                  <div className="w-full mb-8">
+                    <div className="text-orange-600 font-bold text-sm mb-1 tracking-wider">MORNING INSIGHT</div>
+                    <h2 className="text-2xl font-light text-slate-800 leading-snug">
+                      <span className="font-semibold text-orange-500">晨间黄金时段</span>，泵奶效率极佳
+                    </h2>
+                    <p className="text-gray-500 text-sm mt-3 leading-relaxed">
+                      这段时间平均产量95ml，已为你设置专属高效排空策略
+                    </p>
+                  </div>
+                  <div className="relative group cursor-pointer" onClick={handleStart}>
+                      <div className="absolute inset-0 bg-orange-200 rounded-full animate-ping opacity-20 group-hover:opacity-40 transition-opacity" />
+                      <div className="absolute -inset-4 bg-gradient-to-tr from-orange-100 to-yellow-50 rounded-full opacity-50 blur-xl" />
+                      <button className="relative w-48 h-48 rounded-full bg-gradient-to-br from-white to-orange-50 shadow-[0_10px_40px_-10px_rgba(251,146,60,0.3)] border border-orange-100 flex flex-col items-center justify-center transition-transform transform active:scale-95 group-hover:scale-105 z-10">
+                        <span className="text-orange-500 mb-2"><Zap size={32} /></span>
+                        <span className="font-semibold text-lg text-slate-700">启动 AI 黄金节律</span>
+                        <span className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">Start Rhythm</span>
+                      </button>
+                  </div>
+              </div>
+              <div className="mb-12 px-6 w-full flex justify-center shrink-0">
+                 <button className="px-8 py-3 bg-white/80 rounded-full border border-slate-200 shadow-sm flex items-center justify-center gap-2.5 group hover:bg-white hover:border-slate-300 hover:shadow-md transition-all active:scale-95">
+                    <span className="text-sm font-medium text-slate-500 group-hover:text-slate-700 transition-colors">手动模式</span>
+                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* RUNNING STATE */}
+          {phase !== 'idle' && !isFinished && (
+            <div className="flex-1 flex flex-col bg-slate-50 relative overflow-hidden">
+              <div className="px-10 pt-4 pb-2 flex justify-between items-end shrink-0 z-10 bg-slate-50">
+                 <MilkBottleSmall volume={volL} side="L" isFlashing={flashL} />
+                 <div className="flex flex-col items-center mb-1">
+                   <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Session Time</div>
+                   <div className="text-3xl font-mono font-medium text-slate-800">{formatTime(duration)}</div>
+                   <div className={`mt-2 px-3 py-1 rounded-full bg-white shadow-sm border border-gray-100 flex items-center gap-1.5 transition-all`}>
+                      <div className={`w-1.5 h-1.5 rounded-full ${phase === 'inducing' ? 'bg-blue-500 animate-pulse' : phase === 'peak' ? 'bg-purple-500 animate-pulse' : 'bg-green-500'}`} />
+                      <span className={`text-[10px] font-bold ${currentConfig.color}`}>
+                        {manualVacuum || manualCycle || manualTemp ? '混合控制' : currentConfig.label}
+                      </span>
+                   </div>
+                 </div>
+                 <MilkBottleSmall volume={volR} side="R" isFlashing={flashR} />
+              </div>
+
+              <div className="text-center h-6 shrink-0 z-10 bg-slate-50">
+                  <span className="text-[11px] text-gray-400 font-medium">
+                    {finishCountdown !== null ? `奶水已排空，即将自动结束` : currentConfig.subLabel}
+                  </span>
+              </div>
+
+              <div className="flex-1 w-full relative mt-2 mb-[10px] flex flex-col justify-end min-h-0">
+                {/* 居中 Toast */}
+                <div className="absolute top-4 left-0 w-full flex justify-center z-20 pointer-events-none">
+                    {showNotification && (
+                      <div className="bg-purple-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg animate-bounce flex items-center gap-1.5 pointer-events-auto">
+                          <Zap size={10} fill="currentColor" /> 捕获强力奶阵 (第{peakCount}次)
+                      </div>
+                    )}
+                </div>
+
+                {/* 自动完成 Toast */}
+                {finishCountdown !== null && (
+                   <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 bg-purple-600 text-white px-6 py-4 rounded-2xl text-center shadow-2xl animate-pulse">
+                      <div className="text-xs text-purple-100 mb-1">已排空</div>
+                      <div className="text-lg font-bold">即将自动完成 ({finishCountdown}s)</div>
+                   </div>
+                )}
+
+                <div className="absolute top-0 right-4 flex items-center gap-3 z-10 pointer-events-none">
+                   <div className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-full backdrop-blur-[2px]">
+                     <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div><span className="text-[10px] font-bold text-slate-500 font-mono">L</span>
+                   </div>
+                   <div className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-full backdrop-blur-[2px]">
+                     <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div><span className="text-[10px] font-bold text-slate-500 font-mono">R</span>
+                   </div>
+                </div>
+                <div className="w-full h-full flex items-end px-4">
+                   <CumulativeWaveform phase={phase} historyData={waveHistory} />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.03)] p-5 pb-6 shrink-0 z-20 space-y-4">
+                <div className="space-y-3">
+                  <ControlBar icon={Wind} label="吸力 (Vacuum)" displayValue={manualVacuum ? `L${manualVacuumVal}` : `L${currentConfig.vacuumLevel}`} isManual={manualVacuum} onToggle={() => setManualVacuum(!manualVacuum)} value={manualVacuum ? manualVacuumVal : currentConfig.vacuumLevel} min={1} max={9} onChange={setManualVacuumVal} />
+                  <ControlBar icon={Waves} label="频率 (Cycle)" displayValue={manualCycle ? `${manualCycleVal}` : `${currentConfig.cycleLevel}`} unit="CPM" isManual={manualCycle} onToggle={() => setManualCycle(!manualCycle)} value={manualCycle ? manualCycleVal : currentConfig.cycleLevel} min={30} max={80} onChange={setManualCycleVal} />
+                  <ControlBar icon={Thermometer} label="温度 (Temp)" displayValue={manualTemp ? `${manualTempVal}` : `${currentConfig.tempValue}`} unit="°C" isManual={manualTemp} onToggle={() => setManualTemp(!manualTemp)} value={manualTemp ? manualTempVal : currentConfig.tempValue} min={37} max={45} onChange={setManualTempVal} />
+                </div>
+                <div className="flex gap-4 pt-2">
+                   <button onClick={() => setIsActive(!isActive)} className="flex-[6] h-12 rounded-xl bg-orange-50 text-orange-600 font-bold text-sm border border-orange-100 flex items-center justify-center active:scale-95 transition-all">
+                     {isActive ? '暂停' : '继续'}
+                   </button>
+                   <button onClick={handleFinish} className="flex-[4] h-12 rounded-xl bg-slate-800 text-white font-bold text-sm shadow-lg flex items-center justify-center active:scale-95 transition-all">
+                     完成
+                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. FINISHED POPUP */}
+          {isFinished && (
+            <div className="absolute inset-0 z-50 flex flex-col justify-end bg-black/40 backdrop-blur-sm animate-fade-in">
+               <div className="w-full bg-slate-50 rounded-t-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-slide-up h-auto max-h-[90%] absolute bottom-0">
+                  <div className="flex-shrink-0 pt-8 pb-4 flex flex-col items-center border-b border-slate-100 bg-white">
+                      <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mb-3 text-green-600"><CheckCircle size={28} /></div>
+                      <h2 className="text-xl font-bold text-slate-800 mb-1">本次泵奶已完成</h2>
+                      <p className="text-xs text-gray-500">辛苦了！每一次坚持都是满满的爱。</p>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center">
+                      <MilkBottleBigPopup total={volL + volR} volL={volL} volR={volR} />
+                      <div className="w-full grid grid-cols-4 gap-2 mb-6">
+                         <div className="flex flex-col items-center justify-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm"><div className="text-[9px] text-gray-400 mb-1">总时长</div><div className="text-sm font-bold text-slate-700 flex items-baseline gap-0.5">{duration}<span className="text-[9px] text-gray-400 font-normal">秒</span></div></div>
+                         <div className="flex flex-col items-center justify-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm"><div className="text-[9px] text-gray-400 mb-1">最高流速</div><div className="text-sm font-bold text-slate-700 flex items-baseline gap-0.5">{(maxFlow * 60).toFixed(0)}<span className="text-[9px] text-gray-400 font-normal">ml/min</span></div></div>
+                         <div className="flex flex-col items-center justify-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm"><div className="text-[9px] text-gray-400 mb-1">高效吸奶</div><div className="text-sm font-bold text-slate-700 flex items-baseline gap-0.5">{efficientSeconds}<span className="text-[9px] text-gray-400 font-normal">秒</span></div></div>
+                         <div className="flex flex-col items-center justify-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm"><div className="text-[9px] text-gray-400 mb-1">捕获奶阵</div><div className="text-sm font-bold text-slate-700 flex items-baseline gap-0.5">{peakCount}<span className="text-[9px] text-gray-400 font-normal">次</span></div></div>
+                      </div>
+                      <div className="w-full bg-gradient-to-br from-orange-50 to-white border border-orange-100 p-5 rounded-2xl relative overflow-hidden">
+                         <div className="absolute top-0 right-0 w-20 h-20 bg-orange-100 rounded-full blur-2xl opacity-50 -mr-10 -mt-10"></div>
+                         <div className="flex items-start gap-3 relative z-10">
+                            <div className="p-2 bg-white rounded-lg text-orange-500 shadow-sm"><Zap size={18} fill="currentColor" /></div>
+                            <div><div className="text-xs font-bold text-orange-600 mb-1">NEXT GOLDEN SESSION</div><div className="text-sm text-slate-700 leading-snug">建议下一次泵奶时间为 <span className="font-bold">今晚 20:00</span></div><div className="text-xs text-gray-500 mt-1">预计可排出奶量 110ml</div></div>
+                         </div>
+                      </div>
+                  </div>
+                  <div className="flex-shrink-0 p-6 bg-white border-t border-slate-100 pb-8">
+                     <button onClick={resetAll} className="w-full h-14 bg-slate-800 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">完成</button>
+                  </div>
+               </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+</script>
+</body>
+</html>
