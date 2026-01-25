@@ -96,8 +96,9 @@
                 canvas.style.height = `${rect.height}px`;
                 
                 // Set Actual Size (Scaled Pixels)
-                canvas.width = rect.width * dpr;
-                canvas.height = rect.height * dpr;
+                // Math.ceil ensure no rounding down issues on mobile
+                canvas.width = Math.ceil(rect.width * dpr);
+                canvas.height = Math.ceil(rect.height * dpr);
                 
                 // Normalize Coordinate System
                 const ctx = canvas.getContext('2d');
@@ -125,9 +126,9 @@
         const parent = canvas.parentElement;
         const dpr = window.devicePixelRatio || 1;
         // Check if canvas logic width matches parent css width
-        if (parent && (canvas.width !== parent.clientWidth * dpr)) {
-             canvas.width = parent.clientWidth * dpr;
-             canvas.height = parent.clientHeight * dpr;
+        if (parent && (canvas.width !== Math.ceil(parent.clientWidth * dpr))) {
+             canvas.width = Math.ceil(parent.clientWidth * dpr);
+             canvas.height = Math.ceil(parent.clientHeight * dpr);
              const ctx = canvas.getContext('2d');
              ctx.scale(dpr, dpr);
         }
@@ -139,12 +140,39 @@
         const width = canvas.width / dpr;
         const height = canvas.height / dpr;
         
+        // 关键调整：增加顶部 padding 避免波形贴顶
         const paddingBottom = 30;
         const centerY = height - paddingBottom; 
-        const paddingTop = 40;
+        const paddingTop = 60; // 增加到 60px
         const availableHeight = height - paddingBottom - paddingTop;
 
         ctx.clearRect(0, 0, width, height);
+
+        // Draw Limits
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(0,0,0,0.1)";
+        
+        // Top Limit Line (Max Flow)
+        ctx.beginPath();
+        ctx.moveTo(0, paddingTop);
+        ctx.lineTo(width, paddingTop);
+        ctx.stroke();
+        
+        // Bottom Limit Line (Min Flow / Baseline)
+        ctx.beginPath();
+        ctx.moveTo(0, centerY); 
+        ctx.lineTo(width, centerY);
+        ctx.stroke();
+        
+        // Labels
+        ctx.font = "10px monospace";
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.textAlign = "left";
+        ctx.fillText("MAX FLOW", 10, paddingTop + 12);
+        ctx.fillText("MIN FLOW", 10, centerY - 6);
+
+        ctx.setLineDash([]);
 
         if (historyData.length > 0) {
           const baseSpacing = 4;
@@ -164,8 +192,8 @@
 
             historyData.forEach((val, index) => {
               const x = index * scaleX; 
-              // Scale amplitude
-              const scaleY = availableHeight / 85; 
+              // 关键调整：分母改为 120，缩小振幅，确保不超出顶部
+              const scaleY = availableHeight / 120; 
               const y = centerY - (val[key] * scaleY); 
 
               if (index === 0) ctx.moveTo(x, y);
