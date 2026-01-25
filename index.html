@@ -1,32 +1,54 @@
+<!-- Chosen Palette: Slate (Backgrounds/Text) + Orange (Primary/Highlights) + Semantic Colors (Blue/Purple/Green) -->
+<!-- Application Structure Plan:
+     1. Container: Mobile-first responsive wrapper (100dvh mobile, fixed aspect desktop) using Flex Column.
+     2. Views (State-based):
+        - Ready View: Insight card + Main Start Button.
+        - Running View:
+            - Header: Status & Milk Bottles.
+            - Body (Flex-1): Canvas Waveform (Cumulative, auto-scaling) + Toasts.
+            - Footer (Fixed): Interactive Control Bars + Action Buttons.
+        - Finished View: Bottom-sheet popup overlay (92% height) with detailed summary stats.
+     3. Logic: React 'useEffect' loop for 1s data ticks, simulating phase transitions (Inducing -> Peak -> Fading).
+-->
+<!-- Visualization & Content Choices:
+     - Waveform: HTML5 Canvas 2D. Rationale: High performance for continuous real-time drawing, custom dashed lines, and area filling. NO SVG charts.
+     - Milk Bottles: CSS-based height animations. Rationale: Lightweight, smooth transitions for liquid levels.
+     - Progress Bars: Interactive HTML/CSS divs. Rationale: Native feel, easy touch manipulation.
+     - Icons: Inline SVG components (Lucide style).
+-->
+<!-- CONFIRMATION: NO SVG image files used. NO Mermaid JS used. -->
+
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Momcozy Air2 AI Cockpit Demo</title>
+    <title>Momcozy Air2 AI Cockpit</title>
     
-    <!-- 引入 React 和 ReactDOM -->
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
-    <!-- 引入 Babel 用于解析 JSX -->
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- 引入 Tailwind CSS -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
     <style>
-        /* 关键修复：强制根元素占满屏幕，禁止 Body 滚动 */
+        /* Force full viewport height, disable scroll on body to handle mobile browsers */
         html, body, #root { 
             width: 100%; 
             height: 100%; 
             margin: 0; 
             padding: 0; 
-            overflow: hidden; /* 防止页面级滚动 */
+            overflow: hidden;
             -webkit-tap-highlight-color: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f3f4f6; /* bg-gray-100 */
         }
         
-        /* 自定义动画 */
+        /* Animations */
         @keyframes slide-up {
             from { transform: translateY(100%); }
             to { transform: translateY(0); }
@@ -34,23 +56,25 @@
         .animate-slide-up {
             animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
-        @keyframes fade-in {
-            from { opacity: 0; }
-            to { opacity: 1; }
+        @keyframes bounce-gentle {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
         }
-        .animate-fade-in {
-            animation: fade-in 0.3s ease-out forwards;
+        .animate-bounce-gentle {
+            animation: bounce-gentle 2s infinite;
         }
     </style>
 </head>
-<body class="bg-gray-100"> <!-- Body 样式移到 CSS 中统一管理 -->
+<body>
 
-<div id="root" class="flex justify-center items-center"></div>
+<div id="root" class="flex justify-center items-center w-full h-full"></div>
 
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // --- 图标组件 ---
+    /**
+     * --- Icon Components (Inline SVG) ---
+     */
     const IconWrapper = ({ children, size = 24, className = "" }) => (
         <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
             {children}
@@ -68,6 +92,9 @@
     const Save = (props) => <IconWrapper {...props}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></IconWrapper>;
     const RotateCcw = (props) => <IconWrapper {...props}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></IconWrapper>;
 
+    /**
+     * --- Constants & Config ---
+     */
     const PHASES = {
       idle: { id: 'idle', color: 'text-gray-400', label: '待机', subLabel: '', vacuumLevel: 1, cycleLevel: 0, tempValue: 37 },
       inducing: { id: 'inducing', color: 'text-blue-500', label: '智能诱导中', subLabel: '舒缓加热按摩乳房，诱导奶阵···', vacuumLevel: 3, cycleLevel: 80, tempValue: 38 },
@@ -75,142 +102,127 @@
       fading: { id: 'fading', color: 'text-green-500', label: '无感渐息中', subLabel: '乳房逐步排空，正在温柔收尾', vacuumLevel: 2, cycleLevel: 30, tempValue: 37 },
     };
 
-    // --- 组件: 波形图 (Canvas HD适配版) ---
+    /**
+     * --- Component: Canvas Waveform ---
+     */
     const CumulativeWaveform = ({ phase, historyData }) => {
       const canvasRef = useRef(null);
 
       useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-        
         const parent = canvas.parentElement;
-        
-        // HD Canvas Setup Function
-        const setupCanvas = () => {
-            if (parent) {
-                const dpr = window.devicePixelRatio || 1;
-                const rect = parent.getBoundingClientRect();
-                
-                // Set Display Size (CSS Pixels)
-                canvas.style.width = `${rect.width}px`;
-                canvas.style.height = `${rect.height}px`;
-                
-                // Set Actual Size (Scaled Pixels)
-                // Math.ceil ensure no rounding down issues on mobile
-                canvas.width = Math.ceil(rect.width * dpr);
-                canvas.height = Math.ceil(rect.height * dpr);
-                
-                // Normalize Coordinate System
-                const ctx = canvas.getContext('2d');
-                ctx.scale(dpr, dpr);
-            }
-        };
-
-        // Resize Listener
-        const handleResize = () => {
-            setupCanvas();
-            // Force redraw logic (usually handled by dependency update, but setup needs to happen)
-        };
-
-        window.addEventListener('resize', handleResize);
-        setupCanvas(); // Initial setup
-
-        return () => window.removeEventListener('resize', handleResize);
-      }, []);
-
-      useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        
-        // Ensure size matches if parent changed without resize event
-        const parent = canvas.parentElement;
-        const dpr = window.devicePixelRatio || 1;
-        // Check if canvas logic width matches parent css width
-        if (parent && (canvas.width !== Math.ceil(parent.clientWidth * dpr))) {
-             canvas.width = Math.ceil(parent.clientWidth * dpr);
-             canvas.height = Math.ceil(parent.clientHeight * dpr);
-             const ctx = canvas.getContext('2d');
-             ctx.scale(dpr, dpr);
-        }
+        if (!parent) return;
 
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        const dpr = window.devicePixelRatio || 1;
 
-        // Use logical width/height for drawing commands
-        const width = canvas.width / dpr;
-        const height = canvas.height / dpr;
-        
-        // 关键调整：增加顶部 padding 避免波形贴顶
-        const paddingBottom = 30;
-        const centerY = height - paddingBottom; 
-        const paddingTop = 60; // 增加到 60px
-        const availableHeight = height - paddingBottom - paddingTop;
+        // Drawing Logic
+        const draw = () => {
+             // Logic width/height for calculations
+             const width = canvas.width / dpr;
+             const height = canvas.height / dpr;
+             
+             // Spacing Config
+             const paddingBottom = 15; // Min Flow Line Buffer
+             const centerY = height - paddingBottom; 
+             const paddingTop = 12; // Max Flow Line Buffer (Tight to top)
+             const availableHeight = height - paddingBottom - paddingTop;
 
-        ctx.clearRect(0, 0, width, height);
+             ctx.clearRect(0, 0, width, height);
 
-        // Draw Limits
-        ctx.setLineDash([4, 4]);
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = "rgba(0,0,0,0.1)";
-        
-        // Top Limit Line (Max Flow)
-        ctx.beginPath();
-        ctx.moveTo(0, paddingTop);
-        ctx.lineTo(width, paddingTop);
-        ctx.stroke();
-        
-        // Bottom Limit Line (Min Flow / Baseline)
-        ctx.beginPath();
-        ctx.moveTo(0, centerY); 
-        ctx.lineTo(width, centerY);
-        ctx.stroke();
-        
-        // Labels
-        ctx.font = "10px monospace";
-        ctx.fillStyle = "rgba(0,0,0,0.3)";
-        ctx.textAlign = "left";
-        ctx.fillText("MAX FLOW", 10, paddingTop + 12);
-        ctx.fillText("MIN FLOW", 10, centerY - 6);
+             // 1. Draw Reference Lines (Dashed, No Text)
+             ctx.setLineDash([4, 4]);
+             ctx.lineWidth = 1;
+             ctx.strokeStyle = "rgba(0,0,0,0.15)";
+             
+             // Max Flow Line
+             ctx.beginPath();
+             ctx.moveTo(0, paddingTop);
+             ctx.lineTo(width, paddingTop);
+             ctx.stroke();
+             
+             // Min Flow Line
+             ctx.beginPath();
+             ctx.moveTo(0, centerY); 
+             ctx.lineTo(width, centerY);
+             ctx.stroke();
+             
+             ctx.setLineDash([]);
 
-        ctx.setLineDash([]);
+             // 2. Draw Waveforms
+             if (historyData.length > 0) {
+               const baseSpacing = 4;
+               const totalRequiredWidth = historyData.length * baseSpacing;
+               
+               let scaleX = baseSpacing;
+               // Compress horizontally if data exceeds width
+               if (totalRequiredWidth > width) {
+                   scaleX = width / historyData.length;
+               }
 
-        if (historyData.length > 0) {
-          const baseSpacing = 4;
-          const totalRequiredWidth = historyData.length * baseSpacing;
-          
-          let scaleX = baseSpacing;
-          if (totalRequiredWidth > width) {
-              scaleX = width / historyData.length;
-          }
+               const drawLine = (key, color) => {
+                 ctx.beginPath();
+                 ctx.strokeStyle = color;
+                 ctx.lineWidth = 2;
+                 ctx.lineJoin = 'round';
+                 ctx.lineCap = 'round'; 
 
-          const drawLine = (key, color) => {
-            ctx.beginPath();
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-            ctx.lineJoin = 'round';
-            ctx.lineCap = 'round'; 
+                 historyData.forEach((val, index) => {
+                   const x = index * scaleX; 
+                   // Amplitude Scaling: 100 as denominator to keep waves large but within bounds
+                   const scaleY = availableHeight / 100; 
+                   const y = centerY - (val[key] * scaleY); 
 
-            historyData.forEach((val, index) => {
-              const x = index * scaleX; 
-              // 关键调整：分母改为 120，缩小振幅，确保不超出顶部
-              const scaleY = availableHeight / 120; 
-              const y = centerY - (val[key] * scaleY); 
+                   if (index === 0) ctx.moveTo(x, y);
+                   else ctx.lineTo(x, y);
+                 });
+                 ctx.stroke();
+               };
 
-              if (index === 0) ctx.moveTo(x, y);
-              else ctx.lineTo(x, y);
-            });
-            ctx.stroke();
-          };
+               drawLine('r', '#a855f7'); // Right
+               drawLine('l', '#3b82f6'); // Left
+             }
+        };
 
-          drawLine('r', '#a855f7'); 
-          drawLine('l', '#3b82f6'); 
-        }
+        // ResizeObserver to handle layout changes dynamically
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (let entry of entries) {
+                const { width, height } = entry.contentRect;
+                if (width > 0 && height > 0) {
+                    canvas.style.width = `${width}px`;
+                    canvas.style.height = `${height}px`;
+                    canvas.width = Math.ceil(width * dpr);
+                    canvas.height = Math.ceil(height * dpr);
+                    ctx.scale(dpr, dpr);
+                    // Force redraw
+                    requestAnimationFrame(draw);
+                }
+            }
+        });
+
+        // Double RAF to prevent layout thrashing on init
+        requestAnimationFrame(() => {
+             requestAnimationFrame(() => {
+                 resizeObserver.observe(parent);
+                 draw();
+             });
+        });
+
+        // Redraw when data changes
+        requestAnimationFrame(draw);
+
+        return () => {
+            resizeObserver.disconnect();
+        };
       }, [historyData]); 
 
       return <canvas ref={canvasRef} className="block w-full h-full" />;
     };
 
-    // --- 组件: 小奶瓶 ---
+    /**
+     * --- Component: Small Milk Bottle (Running State) ---
+     */
     const MilkBottleSmall = ({ volume, side, isFlashing }) => {
       const maxVol = 150;
       const fillHeight = Math.min((volume / maxVol) * 100, 100);
@@ -240,9 +252,11 @@
       )
     }
 
-    // --- 组件: 完成弹窗大奶瓶 ---
+    /**
+     * --- Component: Big Milk Bottle (Summary Popup) ---
+     */
     const MilkBottleBigPopup = ({ total, volL, volR }) => {
-      const fillHeight = 90; 
+      const fillHeight = 90; // Fixed visual 90% fill
 
       return (
         <div className="flex items-center justify-center gap-8 my-4 w-full">
@@ -285,7 +299,9 @@
       );
     }
 
-    // --- 组件: 可交互控制条 ---
+    /**
+     * --- Component: Interactive Control Bar ---
+     */
     const ControlBar = ({ icon: Icon, label, displayValue, unit, isManual, onToggle, value, min, max, onChange }) => {
       const barRef = useRef(null);
 
@@ -327,7 +343,9 @@
       );
     };
 
-    // --- 主应用 ---
+    /**
+     * --- Main App ---
+     */
     function App() {
       const [isActive, setIsActive] = useState(false);
       const [isFinished, setIsFinished] = useState(false); 
@@ -338,10 +356,12 @@
       const [phaseTimer, setPhaseTimer] = useState(0); 
       const [finishCountdown, setFinishCountdown] = useState(null);
 
+      // Manual Values
       const [manualVacuumVal, setManualVacuumVal] = useState(3); 
       const [manualCycleVal, setManualCycleVal] = useState(50); 
       const [manualTempVal, setManualTempVal] = useState(40); 
 
+      // Data
       const [volL, setVolL] = useState(0);
       const [volR, setVolR] = useState(0);
       const [waveHistory, setWaveHistory] = useState([]);
@@ -358,6 +378,7 @@
 
       const [showNotification, setShowNotification] = useState(false);
 
+      // Simulation Loop
       useEffect(() => {
         let timer;
         if (isActive) {
@@ -365,7 +386,7 @@
             setDuration(d => d + 1);
             setPhaseTimer(t => t + 1);
 
-            // 流程控制逻辑
+            // Phase Logic
             if (phase === 'inducing' && peakCount === 0 && phaseTimer > 4) {
                setPhase('peak'); setPeakCount(1); setPhaseTimer(0);
                setShowNotification(true); setTimeout(() => setShowNotification(false), 4000);
@@ -383,7 +404,7 @@
               else { setIsActive(false); setIsFinished(true); setFinishCountdown(null); }
             }
 
-            // 数据模拟
+            // Data Simulation
             let flowL = 0, flowR = 0;
             if (phase === 'peak') { flowL = 1.2 + Math.random(); flowR = 1.0 + Math.random(); setEfficientSeconds(s => s + 1); } 
             else if (phase === 'inducing') { flowL = 0.2; flowR = 0.15; } 
@@ -403,7 +424,7 @@
                return next;
             });
 
-            // 波形生成
+            // Waveform Generation
             let ampL = 0, ampR = 0;
             if (phase === 'peak') {
                let baseIntensity = 40;
@@ -437,10 +458,10 @@
       const currentConfig = PHASES[phase] || PHASES.idle;
 
       return (
-        /* 修改：移动端强制 full-height，桌面端保持手机尺寸 (390x85vh) */
+        /* Container: 100dvh for mobile, fixed size for desktop. Flex Column strict layout. */
         <div className="w-full h-[100dvh] sm:w-[390px] sm:h-[85vh] bg-white sm:rounded-[2.5rem] shadow-2xl overflow-hidden relative border-0 sm:border border-gray-200 flex flex-col">
           
-          {/* Header */}
+          {/* Header (Fixed) */}
           <div className="px-4 pt-6 pb-2 flex justify-between items-start bg-white z-20 shrink-0 border-b border-gray-50">
             <button onClick={() => phase !== 'idle' ? handleFinish() : resetAll()} className="p-2 -ml-1 text-slate-600 hover:bg-gray-50 active:bg-gray-100 rounded-full transition-all">
               <ChevronLeft size={26} />
@@ -467,7 +488,9 @@
             </button>
           </div>
 
-          {/* READY STATE */}
+          {/* CONTENT AREA (Flex-1) */}
+          
+          {/* 1. READY STATE */}
           {phase === 'idle' && !isFinished && (
             <div className="flex-1 flex flex-col relative overflow-hidden z-10">
                <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-orange-100/50 to-transparent pointer-events-none" />
@@ -499,9 +522,11 @@
             </div>
           )}
 
-          {/* RUNNING STATE */}
+          {/* 2. RUNNING STATE */}
           {phase !== 'idle' && !isFinished && (
             <div className="flex-1 flex flex-col bg-slate-50 relative overflow-hidden">
+              
+              {/* Stats (Fixed Height) */}
               <div className="px-10 pt-4 pb-2 flex justify-between items-end shrink-0 z-10 bg-slate-50">
                  <MilkBottleSmall volume={volL} side="L" isFlashing={flashL} />
                  <div className="flex flex-col items-center mb-1">
@@ -523,9 +548,10 @@
                   </span>
               </div>
 
+              {/* Waveform (Flexible Height) */}
               <div className="flex-1 w-full relative mt-2 mb-[10px] flex flex-col justify-end min-h-[200px]">
-                {/* 居中 Toast */}
-                <div className="absolute top-4 left-0 w-full flex justify-center z-20 pointer-events-none">
+                {/* Center Toast */}
+                <div className="absolute top-9 left-0 w-full flex justify-center z-20 pointer-events-none">
                     {showNotification && (
                       <div className="bg-purple-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg animate-bounce flex items-center gap-1.5 pointer-events-auto">
                           <Zap size={10} fill="currentColor" /> 捕获强力奶阵 (第{peakCount}次)
@@ -533,7 +559,7 @@
                     )}
                 </div>
 
-                {/* 自动完成 Toast */}
+                {/* Auto-Finish Toast */}
                 {finishCountdown !== null && (
                    <div className="absolute top-1/2 left-0 w-full flex justify-center z-30 pointer-events-none">
                        <div className="bg-purple-600 text-white px-6 py-4 rounded-2xl text-center shadow-2xl animate-pulse pointer-events-auto">
@@ -543,7 +569,8 @@
                    </div>
                 )}
 
-                <div className="absolute top-0 right-4 flex items-center gap-3 z-10 pointer-events-none">
+                {/* L/R Legend */}
+                <div className="absolute top-6 right-4 flex items-center gap-3 z-10 pointer-events-none">
                    <div className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-full backdrop-blur-[2px]">
                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div><span className="text-[10px] font-bold text-slate-500 font-mono">L</span>
                    </div>
@@ -551,11 +578,14 @@
                      <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div><span className="text-[10px] font-bold text-slate-500 font-mono">R</span>
                    </div>
                 </div>
+
+                {/* Canvas */}
                 <div className="w-full h-full flex items-end px-4">
                    <CumulativeWaveform phase={phase} historyData={waveHistory} />
                 </div>
               </div>
 
+              {/* Controls (Fixed Height) */}
               <div className="bg-white rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.03)] p-5 pb-6 shrink-0 z-20 space-y-4">
                 <div className="space-y-3">
                   <ControlBar icon={Wind} label="吸力 (Vacuum)" displayValue={manualVacuum ? `L${manualVacuumVal}` : `L${currentConfig.vacuumLevel}`} isManual={manualVacuum} onToggle={() => setManualVacuum(!manualVacuum)} value={manualVacuum ? manualVacuumVal : currentConfig.vacuumLevel} min={1} max={9} onChange={setManualVacuumVal} />
