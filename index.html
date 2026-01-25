@@ -16,9 +16,15 @@
     <script src="https://cdn.tailwindcss.com"></script>
     
     <style>
-        body { margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-        /* 隐藏滚动条 */
-        ::-webkit-scrollbar { display: none; }
+        /* 关键修复：强制根元素占满屏幕，禁止 Body 滚动 */
+        html, body, #root { 
+            width: 100%; 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; /* 防止页面级滚动 */
+            -webkit-tap-highlight-color: transparent;
+        }
         
         /* 自定义动画 */
         @keyframes slide-up {
@@ -37,9 +43,9 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+<body class="bg-gray-100"> <!-- Body 样式移到 CSS 中统一管理 -->
 
-<div id="root" class="w-full h-full flex justify-center items-center"></div>
+<div id="root" class="flex justify-center items-center"></div>
 
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
@@ -69,25 +75,44 @@
       fading: { id: 'fading', color: 'text-green-500', label: '无感渐息中', subLabel: '乳房逐步排空，正在温柔收尾', vacuumLevel: 2, cycleLevel: 30, tempValue: 37 },
     };
 
-    // --- 组件: 波形图 ---
+    // --- 组件: 波形图 (Canvas HD适配版) ---
     const CumulativeWaveform = ({ phase, historyData }) => {
       const canvasRef = useRef(null);
 
-      // 实时自适应 Canvas 尺寸
       useEffect(() => {
-        const handleResize = () => {
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            const parent = canvas.parentElement;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const parent = canvas.parentElement;
+        
+        // HD Canvas Setup Function
+        const setupCanvas = () => {
             if (parent) {
-                canvas.width = parent.clientWidth;
-                canvas.height = parent.clientHeight;
-                // 触发一次重绘逻辑(通过依赖更新)
+                const dpr = window.devicePixelRatio || 1;
+                const rect = parent.getBoundingClientRect();
+                
+                // Set Display Size (CSS Pixels)
+                canvas.style.width = `${rect.width}px`;
+                canvas.style.height = `${rect.height}px`;
+                
+                // Set Actual Size (Scaled Pixels)
+                canvas.width = rect.width * dpr;
+                canvas.height = rect.height * dpr;
+                
+                // Normalize Coordinate System
+                const ctx = canvas.getContext('2d');
+                ctx.scale(dpr, dpr);
             }
         };
 
+        // Resize Listener
+        const handleResize = () => {
+            setupCanvas();
+            // Force redraw logic (usually handled by dependency update, but setup needs to happen)
+        };
+
         window.addEventListener('resize', handleResize);
-        handleResize(); // Init
+        setupCanvas(); // Initial setup
 
         return () => window.removeEventListener('resize', handleResize);
       }, []);
@@ -96,18 +121,23 @@
         const canvas = canvasRef.current;
         if (!canvas) return;
         
-        // 确保尺寸同步
+        // Ensure size matches if parent changed without resize event
         const parent = canvas.parentElement;
-        if (parent && (canvas.width !== parent.clientWidth || canvas.height !== parent.clientHeight)) {
-            canvas.width = parent.clientWidth;
-            canvas.height = parent.clientHeight;
+        const dpr = window.devicePixelRatio || 1;
+        // Check if canvas logic width matches parent css width
+        if (parent && (canvas.width !== parent.clientWidth * dpr)) {
+             canvas.width = parent.clientWidth * dpr;
+             canvas.height = parent.clientHeight * dpr;
+             const ctx = canvas.getContext('2d');
+             ctx.scale(dpr, dpr);
         }
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const width = canvas.width;
-        const height = canvas.height;
+        // Use logical width/height for drawing commands
+        const width = canvas.width / dpr;
+        const height = canvas.height / dpr;
         
         const paddingBottom = 30;
         const centerY = height - paddingBottom; 
@@ -134,6 +164,7 @@
 
             historyData.forEach((val, index) => {
               const x = index * scaleX; 
+              // Scale amplitude
               const scaleY = availableHeight / 85; 
               const y = centerY - (val[key] * scaleY); 
 
@@ -146,9 +177,9 @@
           drawLine('r', '#a855f7'); 
           drawLine('l', '#3b82f6'); 
         }
-      }, [historyData]); // historyData 更新时重绘
+      }, [historyData]); 
 
-      return <canvas ref={canvasRef} className="w-full h-full" />;
+      return <canvas ref={canvasRef} className="block w-full h-full" />;
     };
 
     // --- 组件: 小奶瓶 ---
@@ -378,8 +409,8 @@
       const currentConfig = PHASES[phase] || PHASES.idle;
 
       return (
-        /* 修改点：w-full h-full 用于移动端自适应，sm:w-[390px] sm:h-[85vh] 用于桌面端保持手机形态 */
-        <div className="w-full h-full sm:w-[390px] sm:h-[85vh] bg-white sm:rounded-[2.5rem] shadow-2xl overflow-hidden relative border-0 sm:border border-gray-200 flex flex-col">
+        /* 修改：移动端强制 full-height，桌面端保持手机尺寸 (390x85vh) */
+        <div className="w-full h-[100dvh] sm:w-[390px] sm:h-[85vh] bg-white sm:rounded-[2.5rem] shadow-2xl overflow-hidden relative border-0 sm:border border-gray-200 flex flex-col">
           
           {/* Header */}
           <div className="px-4 pt-6 pb-2 flex justify-between items-start bg-white z-20 shrink-0 border-b border-gray-50">
@@ -464,8 +495,8 @@
                   </span>
               </div>
 
-              <div className="flex-1 w-full relative mt-2 mb-[10px] flex flex-col justify-end min-h-0">
-                {/* 居中 Toast (Flex) */}
+              <div className="flex-1 w-full relative mt-2 mb-[10px] flex flex-col justify-end min-h-[200px]">
+                {/* 居中 Toast */}
                 <div className="absolute top-4 left-0 w-full flex justify-center z-20 pointer-events-none">
                     {showNotification && (
                       <div className="bg-purple-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg animate-bounce flex items-center gap-1.5 pointer-events-auto">
