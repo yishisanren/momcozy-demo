@@ -1,54 +1,33 @@
-<!-- Chosen Palette: Slate (Backgrounds/Text) + Orange (Primary/Highlights) + Semantic Colors (Blue/Purple/Green) -->
-<!-- Application Structure Plan:
-     1. Container: Mobile-first responsive wrapper (100dvh mobile, fixed aspect desktop) using Flex Column.
-     2. Views (State-based):
-        - Ready View: Insight card + Main Start Button.
-        - Running View:
-            - Header: Status & Milk Bottles.
-            - Body (Flex-1): Canvas Waveform (Cumulative, auto-scaling) + Toasts.
-            - Footer (Fixed): Interactive Control Bars + Action Buttons.
-        - Finished View: Bottom-sheet popup overlay (92% height) with detailed summary stats.
-     3. Logic: React 'useEffect' loop for 1s data ticks, simulating phase transitions (Inducing -> Peak -> Fading).
--->
-<!-- Visualization & Content Choices:
-     - Waveform: HTML5 Canvas 2D. Rationale: High performance for continuous real-time drawing, custom dashed lines, and area filling. NO SVG charts.
-     - Milk Bottles: CSS-based height animations. Rationale: Lightweight, smooth transitions for liquid levels.
-     - Progress Bars: Interactive HTML/CSS divs. Rationale: Native feel, easy touch manipulation.
-     - Icons: Inline SVG components (Lucide style).
--->
-<!-- CONFIRMATION: NO SVG image files used. NO Mermaid JS used. -->
-
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Momcozy Air2 AI Cockpit</title>
+    <title>Momcozy Air2 AI Cockpit Demo</title>
     
-    <!-- React & ReactDOM -->
+    <!-- 引入 React 和 ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
-    <!-- Babel -->
+    <!-- 引入 Babel 用于解析 JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- Tailwind CSS -->
+    <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
     <style>
-        /* Force full viewport height, disable scroll on body to handle mobile browsers */
+        /* 核心布局修复 */
         html, body, #root { 
             width: 100%; 
             height: 100%; 
             margin: 0; 
             padding: 0; 
-            overflow: hidden;
+            overflow: hidden; 
             -webkit-tap-highlight-color: transparent;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f3f4f6; /* bg-gray-100 */
         }
         
-        /* Animations */
+        /* 动画定义 */
         @keyframes slide-up {
             from { transform: translateY(100%); }
             to { transform: translateY(0); }
@@ -56,25 +35,38 @@
         .animate-slide-up {
             animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
-        @keyframes bounce-gentle {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
+        @keyframes fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
-        .animate-bounce-gentle {
-            animation: bounce-gentle 2s infinite;
+        .animate-fade-in {
+            animation: fade-in 0.3s ease-out forwards;
+        }
+
+        /* 恢复：页面向上淡入动画 */
+        @keyframes fade-in-up {
+            from { 
+                opacity: 0; 
+                transform: translateY(20px) scale(0.98); 
+            }
+            to { 
+                opacity: 1; 
+                transform: translateY(0) scale(1); 
+            }
+        }
+        .animate-fade-in-up {
+            animation: fade-in-up 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
         }
     </style>
 </head>
-<body>
+<body class="bg-gray-100">
 
-<div id="root" class="flex justify-center items-center w-full h-full"></div>
+<div id="root" class="flex justify-center items-center"></div>
 
 <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    /**
-     * --- Icon Components (Inline SVG) ---
-     */
+    // --- 图标组件 ---
     const IconWrapper = ({ children, size = 24, className = "" }) => (
         <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
             {children}
@@ -92,9 +84,6 @@
     const Save = (props) => <IconWrapper {...props}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></IconWrapper>;
     const RotateCcw = (props) => <IconWrapper {...props}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></IconWrapper>;
 
-    /**
-     * --- Constants & Config ---
-     */
     const PHASES = {
       idle: { id: 'idle', color: 'text-gray-400', label: '待机', subLabel: '', vacuumLevel: 1, cycleLevel: 0, tempValue: 37 },
       inducing: { id: 'inducing', color: 'text-blue-500', label: '智能诱导中', subLabel: '舒缓加热按摩乳房，诱导奶阵···', vacuumLevel: 3, cycleLevel: 80, tempValue: 38 },
@@ -102,12 +91,103 @@
       fading: { id: 'fading', color: 'text-green-500', label: '无感渐息中', subLabel: '乳房逐步排空，正在温柔收尾', vacuumLevel: 2, cycleLevel: 30, tempValue: 37 },
     };
 
-    /**
-     * --- Component: Canvas Waveform ---
-     */
+    // --- 核心组件: 波形图 (整合修复版 + 平滑曲线 + 抗闪烁) ---
     const CumulativeWaveform = ({ phase, historyData }) => {
       const canvasRef = useRef(null);
+      // 使用 ref 存储最新数据，供 ResizeObserver 的闭包调用，避免依赖变化导致重置
+      const dataRef = useRef(historyData);
+      
+      useEffect(() => {
+          dataRef.current = historyData;
+      }, [historyData]);
 
+      // 绘制逻辑
+      const draw = (canvas, ctx, width, height) => {
+             // 间距配置
+             const paddingBottom = 15; 
+             const centerY = height - paddingBottom; 
+             const paddingTop = 24; 
+             const availableHeight = height - paddingBottom - paddingTop;
+
+             ctx.clearRect(0, 0, width, height);
+
+             // 1. 绘制虚线
+             ctx.setLineDash([4, 4]);
+             ctx.lineWidth = 1;
+             ctx.strokeStyle = "rgba(0,0,0,0.15)";
+             
+             // Max Flow
+             ctx.beginPath();
+             ctx.moveTo(0, paddingTop);
+             ctx.lineTo(width, paddingTop);
+             ctx.stroke();
+             
+             // Min Flow
+             ctx.beginPath();
+             ctx.moveTo(0, centerY); 
+             ctx.lineTo(width, centerY);
+             ctx.stroke();
+             
+             ctx.setLineDash([]);
+
+             // 2. 绘制波形 (使用 ref 中的最新数据)
+             const data = dataRef.current;
+             if (data.length > 0) {
+               const baseSpacing = 4;
+               const totalRequiredWidth = data.length * baseSpacing;
+               
+               let scaleX = baseSpacing;
+               if (totalRequiredWidth > width) {
+                   scaleX = width / data.length;
+               }
+
+               // 准备坐标点
+               const pointsR = data.map((val, index) => ({
+                 x: index * scaleX,
+                 y: centerY - (val.r * (availableHeight / 100))
+               }));
+
+               const pointsL = data.map((val, index) => ({
+                 x: index * scaleX,
+                 y: centerY - (val.l * (availableHeight / 100))
+               }));
+
+               // 平滑绘制函数
+               const drawSmoothLine = (points, color) => {
+                 if (points.length < 2) return;
+                 ctx.beginPath();
+                 ctx.strokeStyle = color;
+                 ctx.lineWidth = 2;
+                 ctx.lineJoin = 'round';
+                 ctx.lineCap = 'round'; 
+
+                 ctx.moveTo(points[0].x, points[0].y);
+
+                 for (let i = 1; i < points.length - 2; i++) {
+                   const xc = (points[i].x + points[i + 1].x) / 2;
+                   const yc = (points[i].y + points[i + 1].y) / 2;
+                   ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+                 }
+
+                 if (points.length > 2) {
+                    ctx.quadraticCurveTo(
+                        points[points.length - 2].x,
+                        points[points.length - 2].y,
+                        points[points.length - 1].x,
+                        points[points.length - 1].y
+                    );
+                 } else {
+                    ctx.lineTo(points[1].x, points[1].y);
+                 }
+                 ctx.stroke();
+               };
+
+               drawSmoothLine(pointsR, '#a855f7'); 
+               drawSmoothLine(pointsL, '#3b82f6'); 
+             }
+      };
+
+      // 初始化 ResizeObserver (只运行一次)
       useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -117,112 +197,50 @@
         const ctx = canvas.getContext('2d');
         const dpr = window.devicePixelRatio || 1;
 
-        // Drawing Logic
-        const draw = () => {
-             // Logic width/height for calculations
-             const width = canvas.width / dpr;
-             const height = canvas.height / dpr;
-             
-             // Spacing Config
-             const paddingBottom = 15; // Min Flow Line Buffer
-             const centerY = height - paddingBottom; 
-             const paddingTop = 12; // Max Flow Line Buffer (Tight to top)
-             const availableHeight = height - paddingBottom - paddingTop;
-
-             ctx.clearRect(0, 0, width, height);
-
-             // 1. Draw Reference Lines (Dashed, No Text)
-             ctx.setLineDash([4, 4]);
-             ctx.lineWidth = 1;
-             ctx.strokeStyle = "rgba(0,0,0,0.15)";
-             
-             // Max Flow Line
-             ctx.beginPath();
-             ctx.moveTo(0, paddingTop);
-             ctx.lineTo(width, paddingTop);
-             ctx.stroke();
-             
-             // Min Flow Line
-             ctx.beginPath();
-             ctx.moveTo(0, centerY); 
-             ctx.lineTo(width, centerY);
-             ctx.stroke();
-             
-             ctx.setLineDash([]);
-
-             // 2. Draw Waveforms
-             if (historyData.length > 0) {
-               const baseSpacing = 4;
-               const totalRequiredWidth = historyData.length * baseSpacing;
-               
-               let scaleX = baseSpacing;
-               // Compress horizontally if data exceeds width
-               if (totalRequiredWidth > width) {
-                   scaleX = width / historyData.length;
-               }
-
-               const drawLine = (key, color) => {
-                 ctx.beginPath();
-                 ctx.strokeStyle = color;
-                 ctx.lineWidth = 2;
-                 ctx.lineJoin = 'round';
-                 ctx.lineCap = 'round'; 
-
-                 historyData.forEach((val, index) => {
-                   const x = index * scaleX; 
-                   // Amplitude Scaling: 100 as denominator to keep waves large but within bounds
-                   const scaleY = availableHeight / 100; 
-                   const y = centerY - (val[key] * scaleY); 
-
-                   if (index === 0) ctx.moveTo(x, y);
-                   else ctx.lineTo(x, y);
-                 });
-                 ctx.stroke();
-               };
-
-               drawLine('r', '#a855f7'); // Right
-               drawLine('l', '#3b82f6'); // Left
-             }
-        };
-
-        // ResizeObserver to handle layout changes dynamically
         const resizeObserver = new ResizeObserver((entries) => {
             for (let entry of entries) {
                 const { width, height } = entry.contentRect;
                 if (width > 0 && height > 0) {
+                    // 设置物理尺寸
                     canvas.style.width = `${width}px`;
                     canvas.style.height = `${height}px`;
                     canvas.width = Math.ceil(width * dpr);
                     canvas.height = Math.ceil(height * dpr);
                     ctx.scale(dpr, dpr);
-                    // Force redraw
-                    requestAnimationFrame(draw);
+                    
+                    // 尺寸变化时立即重绘
+                    requestAnimationFrame(() => draw(canvas, ctx, width, height));
                 }
             }
         });
 
-        // Double RAF to prevent layout thrashing on init
-        requestAnimationFrame(() => {
-             requestAnimationFrame(() => {
-                 resizeObserver.observe(parent);
-                 draw();
-             });
-        });
+        // 启动观察
+        resizeObserver.observe(parent);
 
-        // Redraw when data changes
-        requestAnimationFrame(draw);
-
+        // 清理
         return () => {
             resizeObserver.disconnect();
         };
+      }, []); // 空依赖数组：Observer 永远不重建，防止闪烁
+
+      // 数据更新时触发重绘 (不重建 Observer)
+      useEffect(() => {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          const dpr = window.devicePixelRatio || 1;
+          
+          // 获取当前逻辑尺寸
+          const width = canvas.width / dpr;
+          const height = canvas.height / dpr;
+          
+          requestAnimationFrame(() => draw(canvas, ctx, width, height));
       }, [historyData]); 
 
       return <canvas ref={canvasRef} className="block w-full h-full" />;
     };
 
-    /**
-     * --- Component: Small Milk Bottle (Running State) ---
-     */
+    // --- 组件: 运行状态小奶瓶 ---
     const MilkBottleSmall = ({ volume, side, isFlashing }) => {
       const maxVol = 150;
       const fillHeight = Math.min((volume / maxVol) * 100, 100);
@@ -252,11 +270,9 @@
       )
     }
 
-    /**
-     * --- Component: Big Milk Bottle (Summary Popup) ---
-     */
+    // --- 组件: 完成弹窗大奶瓶 ---
     const MilkBottleBigPopup = ({ total, volL, volR }) => {
-      const fillHeight = 90; // Fixed visual 90% fill
+      const fillHeight = 90; 
 
       return (
         <div className="flex items-center justify-center gap-8 my-4 w-full">
@@ -299,9 +315,7 @@
       );
     }
 
-    /**
-     * --- Component: Interactive Control Bar ---
-     */
+    // --- 组件: 可交互控制条 ---
     const ControlBar = ({ icon: Icon, label, displayValue, unit, isManual, onToggle, value, min, max, onChange }) => {
       const barRef = useRef(null);
 
@@ -343,9 +357,7 @@
       );
     };
 
-    /**
-     * --- Main App ---
-     */
+    // --- 主应用 ---
     function App() {
       const [isActive, setIsActive] = useState(false);
       const [isFinished, setIsFinished] = useState(false); 
@@ -356,12 +368,10 @@
       const [phaseTimer, setPhaseTimer] = useState(0); 
       const [finishCountdown, setFinishCountdown] = useState(null);
 
-      // Manual Values
       const [manualVacuumVal, setManualVacuumVal] = useState(3); 
       const [manualCycleVal, setManualCycleVal] = useState(50); 
       const [manualTempVal, setManualTempVal] = useState(40); 
 
-      // Data
       const [volL, setVolL] = useState(0);
       const [volR, setVolR] = useState(0);
       const [waveHistory, setWaveHistory] = useState([]);
@@ -378,15 +388,16 @@
 
       const [showNotification, setShowNotification] = useState(false);
 
-      // Simulation Loop
       useEffect(() => {
         let timer;
         if (isActive) {
+          // 修改点：间隔改为 1000ms
           timer = setInterval(() => {
+            // 修改点：恢复步进为 1
             setDuration(d => d + 1);
             setPhaseTimer(t => t + 1);
 
-            // Phase Logic
+            // 流程控制逻辑
             if (phase === 'inducing' && peakCount === 0 && phaseTimer > 4) {
                setPhase('peak'); setPeakCount(1); setPhaseTimer(0);
                setShowNotification(true); setTimeout(() => setShowNotification(false), 4000);
@@ -400,11 +411,12 @@
             }
 
             if (finishCountdown !== null) {
+              // 恢复倒计时为 1
               if (finishCountdown > 0) setFinishCountdown(c => c - 1);
               else { setIsActive(false); setIsFinished(true); setFinishCountdown(null); }
             }
 
-            // Data Simulation
+            // 恢复奶量增加速度 (1x)
             let flowL = 0, flowR = 0;
             if (phase === 'peak') { flowL = 1.2 + Math.random(); flowR = 1.0 + Math.random(); setEfficientSeconds(s => s + 1); } 
             else if (phase === 'inducing') { flowL = 0.2; flowR = 0.15; } 
@@ -415,16 +427,26 @@
 
             setVolL(prev => {
                const next = prev + flowL;
-               if (Math.floor(next) > Math.floor(prev) && Math.floor(next) % 10 === 0) { setFlashL(true); setTimeout(() => setFlashL(false), 800); }
+               if (Math.floor(next) > Math.floor(prev) && Math.floor(next) % 10 === 0) { 
+                   setFlashL(true); 
+                   // 新增：调用震动接口
+                   if (navigator.vibrate) navigator.vibrate(50);
+                   setTimeout(() => setFlashL(false), 800); 
+               }
                return next;
             });
             setVolR(prev => {
                const next = prev + flowR;
-               if (Math.floor(next) > Math.floor(prev) && Math.floor(next) % 10 === 0) { setFlashR(true); setTimeout(() => setFlashR(false), 800); }
+               if (Math.floor(next) > Math.floor(prev) && Math.floor(next) % 10 === 0) { 
+                   setFlashR(true); 
+                   // 右侧震动也可以加，或者只加一侧
+                   if (navigator.vibrate) navigator.vibrate(50);
+                   setTimeout(() => setFlashR(false), 800); 
+               }
                return next;
             });
 
-            // Waveform Generation
+            // 波形生成
             let ampL = 0, ampR = 0;
             if (phase === 'peak') {
                let baseIntensity = 40;
@@ -436,16 +458,18 @@
             } else { ampL = 4; ampR = 3; }
             setWaveHistory(prev => [...prev, { l: ampL, r: ampR }]);
 
-          }, 1000);
+          }, 1000); // 1000ms refresh rate
         }
         return () => clearInterval(timer);
       }, [isActive, phase, phaseTimer, peakCount, finishCountdown, maxFlow]);
 
       const formatTime = (seconds) => {
         const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-        const s = (seconds % 60).toString().padStart(2, '0');
+        const s = (Math.floor(seconds % 60)).toString().padStart(2, '0');
         return `${m}:${s}`;
       };
+
+      const formatTimeSeconds = (seconds) => `${Math.floor(seconds)}`;
 
       const resetAll = () => {
         setIsActive(false); setIsFinished(false); setPhase('idle'); setDuration(0);
@@ -458,10 +482,10 @@
       const currentConfig = PHASES[phase] || PHASES.idle;
 
       return (
-        /* Container: 100dvh for mobile, fixed size for desktop. Flex Column strict layout. */
+        /* 外层容器 */
         <div className="w-full h-[100dvh] sm:w-[390px] sm:h-[85vh] bg-white sm:rounded-[2.5rem] shadow-2xl overflow-hidden relative border-0 sm:border border-gray-200 flex flex-col">
           
-          {/* Header (Fixed) */}
+          {/* Header */}
           <div className="px-4 pt-6 pb-2 flex justify-between items-start bg-white z-20 shrink-0 border-b border-gray-50">
             <button onClick={() => phase !== 'idle' ? handleFinish() : resetAll()} className="p-2 -ml-1 text-slate-600 hover:bg-gray-50 active:bg-gray-100 rounded-full transition-all">
               <ChevronLeft size={26} />
@@ -488,9 +512,7 @@
             </button>
           </div>
 
-          {/* CONTENT AREA (Flex-1) */}
-          
-          {/* 1. READY STATE */}
+          {/* READY STATE */}
           {phase === 'idle' && !isFinished && (
             <div className="flex-1 flex flex-col relative overflow-hidden z-10">
                <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-orange-100/50 to-transparent pointer-events-none" />
@@ -522,11 +544,9 @@
             </div>
           )}
 
-          {/* 2. RUNNING STATE */}
+          {/* RUNNING STATE */}
           {phase !== 'idle' && !isFinished && (
-            <div className="flex-1 flex flex-col bg-slate-50 relative overflow-hidden">
-              
-              {/* Stats (Fixed Height) */}
+            <div className="flex-1 flex flex-col bg-slate-50 relative overflow-hidden animate-fade-in-up">
               <div className="px-10 pt-4 pb-2 flex justify-between items-end shrink-0 z-10 bg-slate-50">
                  <MilkBottleSmall volume={volL} side="L" isFlashing={flashL} />
                  <div className="flex flex-col items-center mb-1">
@@ -548,9 +568,8 @@
                   </span>
               </div>
 
-              {/* Waveform (Flexible Height) */}
-              <div className="flex-1 w-full relative mt-2 mb-[10px] flex flex-col justify-end min-h-[200px]">
-                {/* Center Toast */}
+              <div className="flex-1 w-full relative mt-2 mb-[10px] flex flex-col justify-end min-h-0">
+                {/* 居中 Toast */}
                 <div className="absolute top-9 left-0 w-full flex justify-center z-20 pointer-events-none">
                     {showNotification && (
                       <div className="bg-purple-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg animate-bounce flex items-center gap-1.5 pointer-events-auto">
@@ -559,17 +578,16 @@
                     )}
                 </div>
 
-                {/* Auto-Finish Toast */}
+                {/* 自动完成 Toast */}
                 {finishCountdown !== null && (
                    <div className="absolute top-1/2 left-0 w-full flex justify-center z-30 pointer-events-none">
                        <div className="bg-purple-600 text-white px-6 py-4 rounded-2xl text-center shadow-2xl animate-pulse pointer-events-auto">
                           <div className="text-xs text-purple-100 mb-1">已排空</div>
-                          <div className="text-lg font-bold">即将自动完成 ({finishCountdown}s)</div>
+                          <div className="text-lg font-bold">即将自动完成 ({Math.ceil(finishCountdown)}s)</div>
                        </div>
                    </div>
                 )}
 
-                {/* L/R Legend */}
                 <div className="absolute top-6 right-4 flex items-center gap-3 z-10 pointer-events-none">
                    <div className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-full backdrop-blur-[2px]">
                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div><span className="text-[10px] font-bold text-slate-500 font-mono">L</span>
@@ -578,14 +596,11 @@
                      <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div><span className="text-[10px] font-bold text-slate-500 font-mono">R</span>
                    </div>
                 </div>
-
-                {/* Canvas */}
                 <div className="w-full h-full flex items-end px-4">
                    <CumulativeWaveform phase={phase} historyData={waveHistory} />
                 </div>
               </div>
 
-              {/* Controls (Fixed Height) */}
               <div className="bg-white rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.03)] p-5 pb-6 shrink-0 z-20 space-y-4">
                 <div className="space-y-3">
                   <ControlBar icon={Wind} label="吸力 (Vacuum)" displayValue={manualVacuum ? `L${manualVacuumVal}` : `L${currentConfig.vacuumLevel}`} isManual={manualVacuum} onToggle={() => setManualVacuum(!manualVacuum)} value={manualVacuum ? manualVacuumVal : currentConfig.vacuumLevel} min={1} max={9} onChange={setManualVacuumVal} />
@@ -616,9 +631,9 @@
                   <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center">
                       <MilkBottleBigPopup total={volL + volR} volL={volL} volR={volR} />
                       <div className="w-full grid grid-cols-4 gap-2 mb-6">
-                         <div className="flex flex-col items-center justify-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm"><div className="text-[9px] text-gray-400 mb-1">总时长</div><div className="text-sm font-bold text-slate-700 flex items-baseline gap-0.5">{duration}<span className="text-[9px] text-gray-400 font-normal">秒</span></div></div>
+                         <div className="flex flex-col items-center justify-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm"><div className="text-[9px] text-gray-400 mb-1">总时长</div><div className="text-sm font-bold text-slate-700 flex items-baseline gap-0.5">{formatTimeSeconds(duration)}<span className="text-[9px] text-gray-400 font-normal">秒</span></div></div>
                          <div className="flex flex-col items-center justify-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm"><div className="text-[9px] text-gray-400 mb-1">最高流速</div><div className="text-sm font-bold text-slate-700 flex items-baseline gap-0.5">{(maxFlow * 60).toFixed(0)}<span className="text-[9px] text-gray-400 font-normal">ml/min</span></div></div>
-                         <div className="flex flex-col items-center justify-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm"><div className="text-[9px] text-gray-400 mb-1">高效吸奶</div><div className="text-sm font-bold text-slate-700 flex items-baseline gap-0.5">{efficientSeconds}<span className="text-[9px] text-gray-400 font-normal">秒</span></div></div>
+                         <div className="flex flex-col items-center justify-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm"><div className="text-[9px] text-gray-400 mb-1">高效吸奶</div><div className="text-sm font-bold text-slate-700 flex items-baseline gap-0.5">{formatTimeSeconds(efficientSeconds)}<span className="text-[9px] text-gray-400 font-normal">秒</span></div></div>
                          <div className="flex flex-col items-center justify-center p-2 bg-white rounded-xl border border-slate-100 shadow-sm"><div className="text-[9px] text-gray-400 mb-1">捕获奶阵</div><div className="text-sm font-bold text-slate-700 flex items-baseline gap-0.5">{peakCount}<span className="text-[9px] text-gray-400 font-normal">次</span></div></div>
                       </div>
                       <div className="w-full bg-gradient-to-br from-orange-50 to-white border border-orange-100 p-5 rounded-2xl relative overflow-hidden">
